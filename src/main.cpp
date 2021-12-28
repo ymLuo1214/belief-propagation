@@ -4,8 +4,9 @@
 #include <opencv2/highgui.hpp>
 #include <opencv2/imgproc.hpp>
 #include "tictoc.hpp"
+#include <pcl/io/pcd_io.h>
+#include <pcl/point_types.h>
 
-#define KernelSize 8
 int readImage(std::string filename, cv::Mat &mat)
 {
     std::ifstream refFile(filename, std::ios::binary);
@@ -88,28 +89,22 @@ int main(int argc, char *argv[])
     cv::Mat dist;
     TicToc tt;
     int cnt = 0;
-    // cv::Mat ref_o(row, col, CV_8UC1);
-    // cv::Mat test_o(row, col, CV_8UC1);
-    cv::Mat ref_o(row, col, CV_16UC1);
-    cv::Mat test_o(row, col, CV_16UC1);
-    // readImage(argv[1], ref_o);
-    // readImage(argv[2], test_o);
-    ref_o = cv::imread(argv[2]);
-    test_o = cv::imread(argv[1]);
-    cv::resize(ref_o, ref_o, cv::Size(1280, 800));
-    cv::resize(test_o, test_o, cv::Size(1280, 800));
+    cv::Mat ref_o(row, col, CV_8UC1);
+    cv::Mat test_o(row, col, CV_8UC1);
+    readImage(argv[1], ref_o);
+    readImage(argv[2], test_o);
     match my_match(ref_o, test_o);
-    while (cnt < 5)
+    while (cnt < 3)
     {
         cnt++;
         std::cout << cnt << "," << my_match.iteRate() << std::endl;
     }
+    pcl::PointCloud<pcl::PointXYZ> cloud;
     my_match.disImgConvert();
+    my_match.ptsConvert(cloud);
     my_match.disparity.convertTo(dist, CV_16UC1);
+    pcl::io::savePCDFileBinary("./out.pcd", cloud);
     colormap(dist * 16, src);
-    // my_match.destoryCost();
-    cv::imshow("L", ref_o);
-    cv::imshow("R", test_o);
     cv::imshow("disparity", src);
     cv::imshow("dis", my_match.disparity);
     cv::waitKey(1000000);

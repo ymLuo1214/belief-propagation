@@ -4,10 +4,9 @@
 #include <ctime>
 match::match(const cv::Mat &ref, const cv::Mat &test)
 {
-    // img_L = preProcess(ref, true);
-    // img_R = preProcess(test, true);
-    img_L = ref;
-    img_R = test;
+    srand(time(0));
+    img_L = preProcess(ref, true);
+    img_R = preProcess(test, true);
     grid.resize(col * row);
     disparity = cv::Mat(row, col, CV_8UC1);
     for (u_int i = 0; i < col * row; i++)
@@ -17,7 +16,7 @@ match::match(const cv::Mat &ref, const cv::Mat &test)
         grid[i].up_mes = new float[MAX_DISP];
         grid[i].down_mes = new float[MAX_DISP];
         grid[i].mat_cost = new float[MAX_DISP];
-        grid[i].best_disp = 0;
+        grid[i].best_disp = rand() % 29;
         for (int j = 0; j < MAX_DISP; j++)
         {
             grid[i].mat_cost[j] = 0;
@@ -27,52 +26,39 @@ match::match(const cv::Mat &ref, const cv::Mat &test)
             grid[i].right_mes[j] = 0;
         }
     }
-    for (u_int x = MAX_DISP + KSize; x < row - MAX_DISP - KSize; x++)
+    for (u_int x = MAX_DISP; x < row - MAX_DISP; x = x + 1)
     {
-        for (u_int y = MAX_DISP + KSize; y < col - MAX_DISP - KSize; y++)
+        for (u_int y = MAX_DISP; y < col - MAX_DISP; y = y + 1)
         {
             for (int d = 0; d < MAX_DISP; d++)
             {
                 grid[x * col + y].mat_cost[d] = matchCost(x, y, d);
             }
-            // std::cout << x << "," << y << std::endl;
         }
     }
     std::cout << "Initialize finished~~" << std::endl;
 }
 
-// void match::destoryCost()
-// {
-//     for (u_int i = 0; i < col * row; i++)
-//     {
-//         delete grid[i].mat_cost;
-//         delete grid[i].up_mes;
-//         delete grid[i].down_mes;
-//         delete grid[i].left_mes;
-//         delete grid[i].right_mes;
-//     }
-// }
-
 cv::Mat preProcess(const cv::Mat &mat, bool clear)
 {
     cv::Mat res = mat.clone();
-    for (int r = 8; r < row - 8; r++)
+    for (int r = KernelSize; r < row - KernelSize; r++)
     {
         uchar *res_ptr = res.ptr<uchar>(r);
-        for (int c = 8; c < col - 8; c++)
+        for (int c = KernelSize; c < col - KernelSize; c++)
         {
             float sum = 0;
 
             float squareSum = 0;
 
-            for (int i = -8; i <= 8; i++)
+            for (int i = -KernelSize; i <= KernelSize; i++)
             {
                 const uchar *mat_ptr = mat.ptr<uchar>(r + i);
-                for (int j = -8; j <= 8; j++)
+                for (int j = -KernelSize; j <= KernelSize; j++)
                 {
                     float ptmp_cj = mat_ptr[c + j];
-                    sum += ptmp_cj;
 
+                    sum += ptmp_cj;
                     squareSum += ptmp_cj * ptmp_cj;
                 }
             }
@@ -95,10 +81,9 @@ float match::matchCost(int r1, int c1, int dist) const
     float cost = 0;
     for (int i = -KSize; i <= KSize; i++)
     {
-        // const uchar *ref_ptr = img_L.ptr<uchar>(r1 + i);
-        // const uchar *mat_ptr = img_R.ptr<uchar>(r1 + i);
-        const float *ref_ptr = img_L.ptr<float>(r1 + i);
-        const float *mat_ptr = img_R.ptr<float>(r1 + i);
+
+        const uchar *ref_ptr = img_L.ptr<uchar>(r1 + i);
+        const uchar *mat_ptr = img_R.ptr<uchar>(r1 + i);
         for (int j = -KSize; j <= KSize; j++)
         {
             if (ref_ptr[c1 + j] == 0)
@@ -204,10 +189,12 @@ double match::iteRate()
             }
         }
     }
+
     float total_pts = row * col;
     update_rate = change_num / total_pts;
     return update_rate;
 }
+
 void match::disImgConvert()
 {
     for (int i = 0; i < row; i++)
@@ -216,6 +203,31 @@ void match::disImgConvert()
         for (int j = 0; j < col; j++)
         {
             dis_ptr[j] = grid[i * col + j].best_disp;
+        }
+    }
+}
+
+void match::ptsConvert(pcl::PointCloud<pcl::PointXYZ> &cloud)
+{
+
+    cloud.width = col-2*MAX_DISP;
+    cloud.height = row-2*MAX_DISP;
+    cloud.is_dense = true;
+    cloud.points.resize(cloud.width * cloud.height);
+    int cnt = 0;
+    for (int i = MAX_DISP; i < row - MAX_DISP - 8; i++)
+    {
+        uchar *dis_ptr = disparity.ptr<uchar>(i);
+        for (int j = MAX_DISP; j < col - MAX_DISP - 8; j++)
+        {
+            int dis = dis_ptr[j];
+            float z = 2.51 / (dis * 3e-3 / 50 + 2.51 / 700); // mm
+            float y = z * (i - 640) / (2.51 / 0.003);
+            float x = z * (j - 400) / (2.51 / 0.003);
+            cloud.points[cnt].x = x;
+            cloud.points[cnt].y = y;
+            cloud.points[cnt].z = z;
+            cnt++;
         }
     }
 }
