@@ -30,9 +30,16 @@ match::match(const cv::Mat &ref, const cv::Mat &test)
     {
         for (u_int y = MAX_DISP; y < col - MAX_DISP; y = y + 1)
         {
+            float sum_costs = 0;
             for (int d = 0; d < MAX_DISP; d++)
             {
                 grid[x * col + y].mat_cost[d] = matchCost(x, y, d);
+                sum_costs += grid[x * col + y].mat_cost[d] * grid[x * col + y].mat_cost[d];
+            }
+            sum_costs = sqrt(sum_costs);
+            for (int d = 0; d < MAX_DISP; d++)
+            {
+                grid[x * col + y].mat_cost[d] /= sum_costs;
             }
         }
     }
@@ -79,24 +86,43 @@ cv::Mat preProcess(const cv::Mat &mat, bool clear)
 float match::matchCost(int r1, int c1, int dist) const
 {
     float cost = 0;
+    int sum = 0;
     for (int i = -KSize; i <= KSize; i++)
     {
 
         const uchar *ref_ptr = img_L.ptr<uchar>(r1 + i);
         const uchar *mat_ptr = img_R.ptr<uchar>(r1 + i);
+
         for (int j = -KSize; j <= KSize; j++)
         {
-            if (ref_ptr[c1 + j] == 0)
-                continue;
-            else
-            {
-                float ref_ij = static_cast<float>(ref_ptr[c1 + j]);
-                cost += ref_ij * log(ref_ij / (1e-3 + mat_ptr[c1 - dist + j]));
-            }
+            sum += abs(ref_ptr[c1 + j] - mat_ptr[c1 - dist + j]);
         }
     }
-    return cost;
+    sum /= ((2 * KSize + 1) * (2 * KSize + 1));
+    // cost = log(sum) < 0 ? 0 : log(sum);
+    return sum;
 }
+// float match::matchCost(int r1, int c1, int dist) const
+// {
+//     float cost = 0;
+//     for (int i = -KSize; i <= KSize; i++)
+//     {
+
+//         const uchar *ref_ptr = img_L.ptr<uchar>(r1 + i);
+//         const uchar *mat_ptr = img_R.ptr<uchar>(r1 + i);
+//         for (int j = -KSize; j <= KSize; j++)
+//         {
+//             if (ref_ptr[c1 + j] == 0)
+//                 continue;
+//             else
+//             {
+//                 float ref_ij = static_cast<float>(ref_ptr[c1 + j]);
+//                 cost += ref_ij * log(ref_ij / (1e-3 + mat_ptr[c1 - dist + j]));
+//             }
+//         }
+//     }
+//     return cost;
+// }
 
 void match::sendMsg(int x, int y, Direction dir)
 {
@@ -115,25 +141,22 @@ void match::sendMsg(int x, int y, Direction dir)
 
         if (dir != RIGHT)
             coore += grid[x * col + y - 1].right_mes[i];
-        for (int j = 0; j < MAX_DISP; j++)
+        coore += grid[x * col + y].mat_cost[i];
+        switch (dir)
         {
-            coore += (calCoorelation(i, j) / 25);
+        case UP:
+            coore += calCoorelation(i, grid[(x - 1) * col + y].best_disp);
+            break;
+        case DOWN:
+            coore += calCoorelation(i, grid[(x + 1) * col + y].best_disp);
+            break;
+        case LEFT:
+            coore += calCoorelation(i, grid[x * col + y - 1].best_disp);
+            break;
+        default:
+            coore += calCoorelation(i, grid[(x - 1) * col + y + 1].best_disp);
+            break;
         }
-        // switch (dir)
-        // {
-        // case UP:
-        //     coore += calCoorelation(i, grid[(x - 1) * col + y].best_disp);
-        //     break;
-        // case DOWN:
-        //     coore += calCoorelation(i, grid[(x + 1) * col + y].best_disp);
-        //     break;
-        // case LEFT:
-        //     coore += calCoorelation(i, grid[x * col + y-1].best_disp);
-        //     break;
-        // default:
-        //     coore += calCoorelation(i, grid[(x - 1) * col + y+1].best_disp);
-        //     break;
-        // }
         sum += coore * coore;
         msgs[i] = coore;
     }
@@ -173,20 +196,33 @@ double match::iteRate()
         {
             float min_value = 1e20;
             int best_pos = grid[i * col + j].best_disp;
+            float dist_a = 0;
+            float dist_b = 0;
+            bool last_min = false;
             for (int k = 0; k < MAX_DISP; k++)
             {
-                float bs = grid[i * col + j - 1].right_mes[k] * grid[i * col + j + 1].left_mes[k] + grid[(i - 1) * col + j].down_mes[k] + grid[(i + 1) * col + j].up_mes[k] * grid[i * col + j].mat_cost[k];
+                float bs = grid[i * col + j - 1].right_mes[k] + grid[i * col + j + 1].left_mes[k] + grid[(i - 1) * col + j].down_mes[k] + grid[(i + 1) * col + j].up_mes[k] + grid[i * col + j].mat_cost[k] * 100;
+                if (last_min)
+                    dist_b = bs;
                 if (min_value > bs)
                 {
+                    last_min = true;
+                    dist_a = min_value;
                     min_value = bs;
                     best_pos = k;
                 }
+                else
+                    last_min = false;
+                // std::cout << grid[i * col + j - 1].right_mes[k] << "," << grid[i * col + j + 1].left_mes[k] << "," << grid[(i - 1) * col + j].down_mes[k] << "," << grid[(i + 1) * col + j].up_mes[k] << "," << grid[i * col + j].mat_cost[k] << std::endl;
             }
+            // std::cout << dist_a - dist_b << std::endl;
             if (grid[i * col + j].best_disp != best_pos)
             {
-                grid[i * col + j].best_disp = best_pos;
+                grid[i * col + j].best_disp = best_pos + ((dist_a - dist_b) / (dist_a + dist_b - 2 * min_value) / 2);
                 change_num = change_num + 1;
             }
+            int k = best_pos;
+            // std::cout << grid[i * col + j - 1].right_mes[k] << "," << grid[i * col + j + 1].left_mes[k] << "," << grid[(i - 1) * col + j].down_mes[k] << "," << grid[(i + 1) * col + j].up_mes[k] << "," << grid[i * col + j].mat_cost[k] << std::endl;
         }
     }
 
@@ -207,27 +243,38 @@ void match::disImgConvert()
     }
 }
 
-void match::ptsConvert(pcl::PointCloud<pcl::PointXYZ> &cloud)
+void match::ptsConvert(pcl::PointCloud<pcl::PointXYZRGB> &cloud, cv::Mat rgb)
 {
 
-    cloud.width = col-2*MAX_DISP;
-    cloud.height = row-2*MAX_DISP;
+    cloud.width = col - 2 * KSize;
+    cloud.height = row - 2 * KSize;
     cloud.is_dense = true;
     cloud.points.resize(cloud.width * cloud.height);
     int cnt = 0;
-    for (int i = MAX_DISP; i < row - MAX_DISP - 8; i++)
+    for (int i = KSize; i < row - KSize; i++)
     {
+        cv::Vec3b *color_ptr = rgb.ptr<cv::Vec3b>(i);
         uchar *dis_ptr = disparity.ptr<uchar>(i);
-        for (int j = MAX_DISP; j < col - MAX_DISP - 8; j++)
+        for (int j = KSize; j < col - KSize; j++)
         {
-            int dis = dis_ptr[j];
+            int dis = -dis_ptr[j];
             float z = 2.51 / (dis * 3e-3 / 50 + 2.51 / 700); // mm
             float y = z * (i - 640) / (2.51 / 0.003);
             float x = z * (j - 400) / (2.51 / 0.003);
+            int m = 960 * (x - 16) / z + 337;
+            int n = 960 * y / z + 640;
+            // if (n < 0 || n >= 1280 || m < 0 || m >= 720)
+            //     color_ptr[j] = cv::Vec3b(0, 0, 0);
+            // else
+            //     color_ptr[j] = rgb.at<cv::Vec3b>(n, m);
             cloud.points[cnt].x = x;
             cloud.points[cnt].y = y;
             cloud.points[cnt].z = z;
+            cloud.points[cnt].b = color_ptr[j][0];
+            cloud.points[cnt].g = color_ptr[j][1];
+            cloud.points[cnt].r = color_ptr[j][2];
             cnt++;
+            color_ptr[j][2] = z / 10;
         }
     }
 }

@@ -91,20 +91,26 @@ int main(int argc, char *argv[])
     int cnt = 0;
     cv::Mat ref_o(row, col, CV_8UC1);
     cv::Mat test_o(row, col, CV_8UC1);
+    cv::Mat rgb = cv::imread(argv[3]);
     readImage(argv[1], ref_o);
     readImage(argv[2], test_o);
+    tt.tic();
     match my_match(ref_o, test_o);
-    while (cnt < 3)
+    int it = atoi(argv[4]);
+    while (cnt < it)
     {
         cnt++;
         std::cout << cnt << "," << my_match.iteRate() << std::endl;
     }
-    pcl::PointCloud<pcl::PointXYZ> cloud;
+
+    printf("match time: %.2fs\n", tt.toc() / 1000);
+    pcl::PointCloud<pcl::PointXYZRGB> cloud;
     my_match.disImgConvert();
-    my_match.ptsConvert(cloud);
+    my_match.ptsConvert(cloud, rgb);
     my_match.disparity.convertTo(dist, CV_16UC1);
     pcl::io::savePCDFileBinary("./out.pcd", cloud);
     colormap(dist * 16, src);
+    cv::imwrite("/home/lym/disparity1.jpeg", src);
     cv::imshow("disparity", src);
     cv::imshow("dis", my_match.disparity);
     cv::waitKey(1000000);

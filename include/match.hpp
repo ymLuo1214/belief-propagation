@@ -13,7 +13,7 @@
 #define col 800
 #define lamda 10  //constant in calCoorelation func
 #define MAX_SUB 5 //constant in calCoorelation func
-#define KSize 4
+#define KSize 8
 #define KernelSize 8
 enum Direction
 {
@@ -44,7 +44,7 @@ public:
     cv::Mat pts;
     void disImgConvert();
 
-    void ptsConvert(pcl::PointCloud<pcl::PointXYZ> &cloud);
+    void ptsConvert(pcl::PointCloud<pcl::PointXYZRGB> &cloud,cv::Mat rgb);
 
 private:
     std::vector<MarkovNode> grid;
@@ -55,7 +55,7 @@ private:
     float calCoorelation(int x, int y)
     {
         int sub = x - y;
-        float res = std::min(abs(sub), 60) + 1;
+        float res = 5 * std::min(abs(sub), 60) + 1;
         return log(res);
     }
 };
